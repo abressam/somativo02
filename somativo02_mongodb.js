@@ -526,7 +526,6 @@ db.runCommand({
         }
     }
 });
-//com isso, as transacoes feitas a partir de agora serao com no minimo 10 pontos
 
 //no nosso caso, o usuário pode usar os pontos como desconto nesse caso de 100 em 100, aqui subtraimos dele 
 db.usuarios.updateOne(
