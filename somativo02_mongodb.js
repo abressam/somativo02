@@ -424,3 +424,152 @@ db.transacoes.aggregate([
     $sort: { "total_vendas": -1 }      // Ordena os resultados por total de vendas, do maior para o menor
   }
 ]);
+
+
+
+// SPRINT 2 =================================================================================================
+
+// 6. Promoções
+
+//adicionando "promocao" em produtos
+db.runCommand({
+    collMod: "produtos",
+    validator: {
+        $jsonSchema: {
+            bsonType: "object",
+            required: ["nome", "descricao", "preco", "quantidade_disponivel", "categoria_id"],
+            properties: {
+                nome: { bsonType: "string", description: "Nome do produto", minLength: 3, maxLength: 150 },
+                descricao: { bsonType: "string", description: "Descrição do produto", minLength: 3, maxLength: 250 },
+                preco: { bsonType: "decimal", description: "Preço do produto", pattern: "^\d+(\.\d{1,2})?$" },
+                quantidade_disponivel: { bsonType: "int", description: "Quantidade disponível em estoque", minimum: 0 },
+                categoria_id: { bsonType: "objectId", description: "ID da categoria do produto" },
+                promocao: {
+                    bsonType: "object",
+                    description: "Detalhes da promoção do produto",
+                    properties: {
+                        desconto: { bsonType: "int", description: "Percentual de desconto", minimum: 0, maximum: 100 },
+                        inicio: { bsonType: "date", description: "Data de início da promoção" },
+                        fim: { bsonType: "date", description: "Data de término da promoção" }
+                    }
+                }
+            }
+        }
+    }
+});
+
+//adicionando promoção a um produto
+db.produtos.updateOne(
+    { _id: ObjectId("ID_DO_PRODUTO") },
+    {
+        $set: {
+            "promocao.desconto": 20,  // neste caso 20% de desconto
+            "promocao.inicio": new Date("2024-11-01"),
+            "promocao.fim": new Date("2024-12-01")
+        }
+    }
+);
+
+//consultar promoção hoje
+const hoje = new Date();
+db.produtos.find({
+    "promocao.desconto": { $gt: 0 },
+    "promocao.inicio": { $lte: hoje },
+    "promocao.fim": { $gte: hoje }
+});
+
+
+// 7. Pontos de fidelidade
+
+//adicionando "pontos" em usuários 
+db.runCommand({
+    collMod: "usuarios",
+    validator: {
+        $jsonSchema: {
+            bsonType: "object",
+            required: ["nome", "email", "senha", "endereco"],
+            properties: {
+                nome: { bsonType: "string", description: "Nome do usuário", minLength: 3, maxLength: 100 },
+                email: { bsonType: "string", description: "Email do usuário", pattern: "^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$" },
+                senha: { bsonType: "string", description: "Senha do usuário", minLength: 8 },
+                endereco: {
+                    bsonType: "object",
+                    required: ["rua", "cidade", "estado", "cep"],
+                    properties: {
+                        rua: { bsonType: "string", description: "Rua do endereço" },
+                        cidade: { bsonType: "string", description: "Cidade do endereço" },
+                        estado: { bsonType: "string", description: "Estado do endereço, formato: XX", enum: estadosBrasil },
+                        cep: { bsonType: "string", description: "CEP do endereço, formato: XXXXXXXX", minLength: 8 }
+                    }
+                },
+                pontos: { bsonType: "int", description: "Pontos de fidelidade do usuário" } // Nova propriedade adicionada
+            }
+        }
+    }
+});
+
+//adicionando "pontos_fidelidade" em transação (para cada compra)
+db.runCommand({
+    collMod: "transacoes",
+    validator: {
+        $jsonSchema: {
+            bsonType: "object",
+            required: ["usuario_id", "produto_id", "data", "quantidade", "valor_total"],
+            properties: {
+                usuario_id: { bsonType: "objectId", description: "ID do usuário que fez a compra" },
+                produto_id: { bsonType: "objectId", description: "ID do produto comprado" },
+                data: { bsonType: "date", description: "Data da transação" },
+                quantidade: { bsonType: "int", description: "Quantidade do produto comprado", minimum: 1 },
+                valor_total: { bsonType: "decimal", description: "Valor total da transação", pattern: "^\d+(\.\d{1,2})?$" },
+                pontos_fidelidade: { bsonType: "int", description: "Pontos de fidelidade dados ao usuário por esta compra", minimum: 0 }
+            }
+        }
+    }
+});
+//com isso, as transacoes feitas a partir de agora serao com no minimo 10 pontos
+
+//no nosso caso, o usuário pode usar os pontos como desconto nesse caso de 100 em 100, aqui subtraimos dele 
+db.usuarios.updateOne(
+    { _id: ObjectId("ID_DO_USUARIO"), pontos: { $gte: 100 } }, // gte é greater than or equal
+    { $inc: { pontos: -100 } } //inc para incrementar, nesse caso subtrair
+);
+
+
+// 8. Resposta a Avaliações
+
+//adicionando "resposta" em avaliacoes
+db.runCommand({
+    collMod: "avaliacoes",
+    validator: {
+        $jsonSchema: {
+            bsonType: "object",
+            required: ["produto_id", "usuario_id", "nota", "comentario", "data"],
+            properties: {
+                produto_id: { bsonType: "objectId", description: "ID do produto avaliado" },
+                usuario_id: { bsonType: "objectId", description: "ID do usuário que avaliou" },
+                nota: { bsonType: "int", description: "Nota dada pelo usuário deve ser de 1 a 5", minimum: 1, maximum: 5 },
+                comentario: { bsonType: "string", description: "Comentário da avaliação", maxLength: 250 },
+                data: { bsonType: "date", description: "Data da avaliação" },
+                resposta: {
+                    bsonType: "object",
+                    description: "Resposta do vendedor à avaliação",
+                    properties: {
+                        mensagem: { bsonType: "string", description: "Resposta do vendedor", maxLength: 250 },
+                        data_resposta: { bsonType: "date", description: "Data da resposta" }
+                    }
+                }
+            }
+        }
+    }
+});
+
+//comando para adicionar (update o campo) resposta a avaliação
+db.avaliacoes.updateOne(
+    { _id: ObjectId("ID_DA_AVALIACAO") },
+    {
+        $set: {
+            "resposta.mensagem": "Obrigado pelo feedback!",
+            "resposta.data_resposta": new Date()
+        }
+    }
+);
