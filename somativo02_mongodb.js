@@ -572,3 +572,598 @@ db.avaliacoes.updateOne(
         }
     }
 );
+
+// 9. Geolocalização
+
+// 9.1 Atualizando usuário para que possa definir sua localização geográfica.
+
+db.runCommand({
+  collMod: "usuarios",
+  validator: {
+      $jsonSchema: {
+          bsonType: "object",
+          required: ["nome", "email", "senha", "endereco"],
+          properties: {
+              nome: { bsonType: "string", description: "Nome do usuário", minLength: 3, maxLength: 100 },
+              email: { bsonType: "string", description: "Email do usuário", pattern: "^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$" },
+              senha: { bsonType: "string", description: "Senha do usuário", minLength: 8 },
+              endereco: {
+                  bsonType: "object",
+                  required: ["rua", "cidade", "estado", "cep"],
+                  properties: {
+                      rua: { bsonType: "string", description: "Rua do endereço" },
+                      cidade: { bsonType: "string", description: "Cidade do endereço" },
+                      estado: { bsonType: "string", description: "Estado do endereço, formato: XX", enum: estadosBrasil },
+                      cep: { bsonType: "string", description: "CEP do endereço, formato: XXXXXXXX", minLength: 8 }
+                  }
+              },
+              pontos: { bsonType: "int", description: "Pontos de fidelidade do usuário" }, 
+              localizacao: {  // Adicionando o campo 'localizacao' para ponto geográfico
+                bsonType: "object",
+                description: "Localização geográfica do usuário",
+                required: ["type", "coordinates"],
+                properties: {
+                    type: { bsonType: "string", enum: ["Point"], description: "Tipo de geometria, deve ser 'Point'" },
+                    coordinates: { 
+                        bsonType: "array", 
+                        minItems: 2, 
+                        maxItems: 2, 
+                        items: { bsonType: "double" },
+                        description: "Coordenadas geográficas (longitude, latitude)"
+                    }
+                }
+            }
+        }
+      }
+    }
+});
+
+// criação do índice geoespacial do MongoDB para poder realizar busca por proximidade
+db.usuarios.createIndex({ "localizacao": "2dsphere" });
+
+// exemplo de inserção de usuário com localização
+db.usuarios.insertOne({
+  nome: "João Silva",
+  email: "joao.silva@email.com",
+  senha: "senha1234",
+  endereco: {
+      rua: "Rua A",
+      cidade: "São Paulo",
+      estado: "SP",
+      cep: "12345678"
+  },
+  pontos: 150,
+  localizacao: {
+      type: "Point",
+      coordinates: [-46.633309, -23.550520]  // Longitude, Latitude
+  }
+});
+
+// testando a localização do usuário
+db.usuarios.find({
+  localizacao: {
+      $near: {
+          $geometry: { type: "Point", coordinates: [-46.63, -23.55] }, // Coordenadas de exemplo, não precisa ser o número inteiro para localizar
+          $maxDistance: 10000 // Distância máxima em metros
+      }
+  }
+});
+
+// 9.2 Atualizando produto com a localização do vendedor associado a ele
+db.runCommand({
+  collMod: "produtos",
+  validator: {
+    $jsonSchema: {
+      bsonType: "object",
+      required: ["nome", "descricao", "preco", "quantidade_disponivel", "categoria_id", "localizacao"], 
+      properties: {
+        nome: { bsonType: "string", description: "Nome do produto", minLength: 3, maxLength: 150 },
+        descricao: { bsonType: "string", description: "Descrição do produto", minLength: 3, maxLength: 250 },
+        preco: { bsonType: "decimal", description: "Preço do produto", pattern: "^\d+(\.\d{1,2})?$" },
+        quantidade_disponivel: { bsonType: "int", description: "Quantidade disponível em estoque", minimum: 0 },
+        categoria_id: { bsonType: "objectId", description: "ID da categoria do produto" },
+        localizacao: {  
+          bsonType: "object",
+          description: "Localização geográfica do vendedor",
+          required: ["type", "coordinates"],
+          properties: {
+            type: { bsonType: "string", enum: ["Point"], description: "Tipo de geometria, deve ser 'Point'" },
+            coordinates: {
+              bsonType: "array",
+              minItems: 2,
+              maxItems: 2,
+              items: { bsonType: "double" },
+              description: "Coordenadas geográficas (longitude, latitude)"
+            }
+          }
+        }
+      }
+    }
+  }
+});
+
+
+// criacao do indice geoespacial para produtos
+db.produtos.createIndex({ "localizacao": "2dsphere" });
+
+// inserindo um produto com localização
+db.produtos.insertOne({
+  nome: "Smartphone XYZ",
+  descricao: "Smartphone com 6GB de RAM e 128GB de armazenamento",
+  preco:  NumberDecimal("1999.99"),
+  quantidade_disponivel: 50,
+  categoria_id: ObjectId("672d55df5c7964ebca7727ab"),
+  localizacao: {
+    type: "Point",
+    coordinates: [-46.633309, -23.550520] 
+  }
+});
+
+// buscando o produto com localIzação
+db.produtos.find({
+  localizacao: {
+    $near: {
+      $geometry: { type: "Point", coordinates: [-46.633309, -23.550520] },
+      $maxDistance: 10000
+    }
+  }
+});
+
+// 9.3 Os usuários podem buscar produtos com base na proximidade geográfica, podendo filtrar os resultados por raio de distância.
+
+//6735234b465715ccd782b897 João Silva
+let usuarioId = ObjectId("6735234b465715ccd782b897"); // Substituir com a ID do usuário que vai buscar um produto próximo
+
+// Recuperando as coordenadas do usuário a partir do ID
+let usuario = db.usuarios.findOne({ _id: usuarioId });
+let coordenadasUsuario = usuario.localizacao.coordinates;  // Coordenadas do usuário
+
+// Raio de busca em metros
+let raioBusca = 10000;
+
+// Consulta para encontrar produtos próximos à localização do usuário
+db.produtos.find({
+  localizacao: {
+    $near: {
+      $geometry: { type: "Point", coordinates: coordenadasUsuario },
+      $maxDistance: raioBusca
+    }
+  }
+});
+
+// 9.4 Escreva uma consulta de agregação para encontrar a média de distância entre compradores e vendedores para transações concluídas.
+
+// inserindo 3 usuários com localização geográfica aleatória (dentro de 10 km) para fazer o teste
+db.usuarios.insertMany([
+  {
+    nome: "Joaquim Silva",
+    email: "joaquim.silva@email.com",
+    senha: "senha1234",
+    endereco: {
+      rua: "Rua A",
+      cidade: "São Paulo",
+      estado: "SP",
+      cep: "01000-000"
+    },
+    pontos: 150,
+    localizacao: {
+      type: "Point",
+      coordinates: [-46.625, -23.548]  // Coordenadas aleatórias próximas a São Paulo
+    }
+  },
+  {
+    nome: "Mariana Oliveira",
+    email: "mariana.oliveira@email.com",
+    senha: "senha1234",
+    endereco: {
+      rua: "Rua B",
+      cidade: "São Paulo",
+      estado: "SP",
+      cep: "01001-000"
+    },
+    pontos: 200,
+    localizacao: {
+      type: "Point",
+      coordinates: [-46.630, -23.555]  // Coordenadas aleatórias próximas a São Paulo
+    }
+  },
+  {
+    nome: "Carla Pereira",
+    email: "carla.pereira@email.com",
+    senha: "senha1234",
+    endereco: {
+      rua: "Rua C",
+      cidade: "São Paulo",
+      estado: "SP",
+      cep: "01002-000"
+    },
+    pontos: 100,
+    localizacao: {
+      type: "Point",
+      coordinates: [-46.635, -23.560]  // Coordenadas aleatórias próximas a São Paulo
+    }
+  }
+]);
+
+// inserindo 3 produtos com localização geográfica aleatória (dentro de 10 km) para fazer o teste
+db.produtos.insertMany([
+  {
+    nome: "Conjunto Sala de Jantar",
+    descricao: "Produto nunca usado",
+    preco:  NumberDecimal("1000.99"),
+    quantidade_disponivel: 1,
+    categoria_id: ObjectId("672d55df5c7964ebca7727af"),
+    localizacao: {
+      type: "Point",
+      coordinates: [-46.620, -23.545]  // Coordenadas aleatórias próximas a São Paulo
+    }
+  },
+  {
+    nome: "Sofá",
+    descricao: "Produto de qualidade",
+    preco:  NumberDecimal("250.00"),
+    quantidade_disponivel: 30,
+    categoria_id: ObjectId("672d55df5c7964ebca7727af"),
+    localizacao: {
+      type: "Point",
+      coordinates: [-46.625, -23.550]  // Coordenadas aleatórias próximas a São Paulo
+    }
+  },
+  {
+    nome: "Geladeira",
+    descricao: "Produto durável",
+    preco:  NumberDecimal("1350.00"),
+    quantidade_disponivel: 20,
+    categoria_id: ObjectId("672d55df5c7964ebca7727ae"),
+    localizacao: {
+      type: "Point",
+      coordinates: [-46.615, -23.545]  // Coordenadas aleatórias próximas a São Paulo
+    }
+  }
+]);
+
+// inserindo 3 transações concluídas entre os usuários e produtos para testar
+db.transacoes.insertMany([
+  {
+    usuario_id: ObjectId("673523a3465715ccd782b899"),  // _id do usuário Joaquim Silva
+    produto_id: ObjectId("673523e9465715ccd782b89c"),  // _id do produto Conjunto Sala de Jantar
+    data: new Date(),
+    quantidade: 5,
+    valor_total: NumberDecimal("1000.99"),
+    pontos_fidelidade: 5000  
+  },
+  {
+    usuario_id: ObjectId("673523a3465715ccd782b89a"),  // _id do usuário Mariana Oliveira
+    produto_id: ObjectId("673523e9465715ccd782b89d"),  // _id do produto Sofá
+    data: new Date(),
+    quantidade: 3,
+    valor_total: NumberDecimal("250.00"),
+    pontos_fidelidade: 750  
+  },
+  {
+    usuario_id: ObjectId("673523a3465715ccd782b89b"),  // _id do usuário Carla Pereira
+    produto_id: ObjectId("673523e9465715ccd782b89e"),  // _id do produto Geladeira
+    data: new Date(),
+    quantidade: 1,
+    valor_total: NumberDecimal("1350.00"),
+    pontos_fidelidade: 1350 
+  }
+]);
+
+
+// consulta de agregação para encontrar a média de distância das transações feitas (as anteriores com localização implementada)
+
+db.transacoes.aggregate([
+  {
+    $lookup: {
+      from: "usuarios",  // Lookup na coleção de usuários para obter a localização do comprador
+      localField: "usuario_id",
+      foreignField: "_id",
+      as: "comprador"
+    }
+  },
+  {
+    $unwind: "$comprador"  // Desfaz o array de comprador
+  },
+  {
+    $lookup: {
+      from: "produtos",  // Lookup na coleção de produtos para obter a localização do vendedor
+      localField: "produto_id",
+      foreignField: "_id",
+      as: "produto"
+    }
+  },
+  {
+    $unwind: "$produto"  // Desfaz o array de produto
+  },
+  {
+    $project: {
+      // Extrai as coordenadas geográficas do comprador e do vendedor
+      transacao_id: "$_id",
+      comprador_coords: "$comprador.localizacao.coordinates",
+      vendedor_coords: "$produto.localizacao.coordinates"
+    }
+  },
+  {
+    $addFields: {
+      // Calcula a distância entre o comprador e o vendedor usando a fórmula Haversine
+      distancia: {
+        $let: {
+          vars: {
+            lat1: { $arrayElemAt: ["$comprador_coords", 1] },  // Latitude do comprador
+            lon1: { $arrayElemAt: ["$comprador_coords", 0] },  // Longitude do comprador
+            lat2: { $arrayElemAt: ["$vendedor_coords", 1] },  // Latitude do vendedor
+            lon2: { $arrayElemAt: ["$vendedor_coords", 0] }   // Longitude do vendedor
+          },
+          in: {
+            $multiply: [
+              6371,  // Raio da Terra em quilômetros
+              {
+                $acos: {
+                  $add: [
+                    {
+                      $multiply: [
+                        { $sin: { $multiply: [{ $literal: 3.141592653589793 }, { $divide: ["$$lat1", 180] }] } },
+                        { $sin: { $multiply: [{ $literal: 3.141592653589793 }, { $divide: ["$$lat2", 180] }] } }
+                      ]
+                    },
+                    {
+                      $multiply: [
+                        { $cos: { $multiply: [{ $literal: 3.141592653589793 }, { $divide: ["$$lat1", 180] }] } },
+                        { $cos: { $multiply: [{ $literal: 3.141592653589793 }, { $divide: ["$$lat2", 180] }] } },
+                        { $cos: {
+                          $multiply: [{ $literal: 3.141592653589793 }, { $divide: [{ $subtract: ["$$lon2", "$$lon1"] }, 180] }] }
+                        }
+                      ]
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        }
+      }
+    }
+  },
+  {
+    $project: {
+      transacao_id: 1,
+      distancia: 1
+    }
+  }
+]);
+
+
+// 9.5 Escreva uma consulta de agregação para encontrar a categoria de produto mais popular em uma área geográfica específica.
+
+//inserir mais produtos para podermos buscar
+db.produtos.insertMany([
+  {
+    nome: 'Mesa de Centro',
+    descricao: 'Mesa de centro de madeira com design moderno',
+    preco: Decimal128('300.00'),
+    quantidade_disponivel: 15,
+    categoria_id: ObjectId('672d55df5c7964ebca7727af'),  
+    localizacao: {
+      type: 'Point',
+      coordinates: [-46.620, -23.547],
+    }
+  },
+  {
+    nome: 'Estante de Livros',
+    descricao: 'Estante de livros com 5 prateleiras',
+    preco: Decimal128('450.00'),
+    quantidade_disponivel: 10,
+    categoria_id: ObjectId('672d55df5c7964ebca7727af'),  
+    localizacao: {
+      type: 'Point',
+      coordinates: [-46.618, -23.548]
+    }
+  }
+]);
+
+//inserir mais transações/compra venda
+db.transacoes.insertMany([
+  {
+    produto_id: ObjectId("67352458465715ccd782b8a2"),  // Mesa de Centro
+    usuario_id: ObjectId("673523a3465715ccd782b899"),  // ID do Joaquim Silva
+    quantidade: 3,
+    valor_total: Decimal128("3000.00"),  
+    data: new Date("2024-11-04"),
+    pontos_fidelidade: 3000
+  },
+  {
+    produto_id: ObjectId("67352458465715ccd782b8a3"),  // Estante de Livros
+    usuario_id: ObjectId("673523a3465715ccd782b89a"),  // ID da Mariana Oliveira
+    quantidade: 5,
+    valor_total: Decimal128("1200.00"),  
+    data: new Date("2024-11-05"),
+    pontos_fidelidade: 1200
+  }
+]);
+
+// Consulta de agregação  para encontrar a categoria de produto mais popular em uma área geográfica específica.
+
+const pontoCentral = [-46.625, -23.545];  
+raioBusca = 5000;  
+
+db.transacoes.aggregate([
+  {
+    $lookup: {
+      from: "produtos",           
+      localField: "produto_id",   
+      foreignField: "_id",       
+      as: "produto"
+    }
+  },
+  {
+    $unwind: "$produto"  // Desenrola o array de produtos para poder acessar os campos
+  },
+  {
+    $match: {
+      "produto.localizacao": {
+        $geoWithin: {
+          $centerSphere: [pontoCentral, raioBusca / 6378100]  // Conversão do raio de metros para radianos
+        }
+      }
+    }
+  },
+  {
+    $lookup: {
+      from: "categorias",            
+      localField: "produto.categoria_id", 
+      foreignField: "_id",           
+      as: "categoria"
+    }
+  },
+  {
+    $unwind: "$categoria"  // Desenrola o array de categorias
+  },
+  {
+    $group: {
+      _id: "$categoria.nome",
+      total_vendas: { $sum: 1 }     // Conta o número de transações por categoria
+    }
+  },
+  {
+    $sort: { total_vendas: -1 }
+  },
+  {
+    $limit: 1
+  }
+]);
+
+
+// 10. Consultas de agregação para gerar relatórios de vendas para os vendedores.
+
+// 1. Total de Vendas e Transações por Produto
+
+db.transacoes.aggregate([
+  {
+    $lookup: {
+      from: "produtos",
+      localField: "produto_id",
+      foreignField: "_id",
+      as: "produto_info"
+    }
+  },
+  { $unwind: "$produto_info" },
+  {
+    $group: {
+      _id: "$produto_info.nome",
+      total_vendas: { $sum: "$valor_total" },
+      total_transacoes: { $sum: 1 }
+    }
+  },
+  {
+    $project: {
+      produto: "$_id",
+      total_vendas: 1,
+      total_transacoes: 1
+    }
+  },
+  { $sort: { total_vendas: -1 } } 
+]);
+
+// 2. Total de Vendas por Mês
+
+db.transacoes.aggregate([
+  {
+    $group: {
+      _id: { $month: "$data" },
+      total_vendas: { $sum: "$valor_total" },
+      total_transacoes: { $sum: 1 }
+    }
+  },
+  {
+    $project: {
+      mes: "$_id",
+      total_vendas: 1,
+      total_transacoes: 1
+    }
+  },
+  { $sort: { mes: 1 } } 
+]);
+
+//3. Produtos Mais Vendidos
+db.transacoes.aggregate([
+  {
+    $lookup: {
+      from: "produtos",
+      localField: "produto_id",
+      foreignField: "_id",
+      as: "produto_info"
+    }
+  },
+  { $unwind: "$produto_info" },
+  {
+    $group: {
+      _id: "$produto_info.nome",
+      quantidade_vendida: { $sum: "$quantidade" }
+    }
+  },
+  {
+    $project: {
+      produto: "$_id",
+      quantidade_vendida: 1
+    }
+  },
+  { $sort: { quantidade_vendida: -1 } }
+]);
+
+// 4. Valor Médio de Vendas por Produto
+db.transacoes.aggregate([
+  {
+    $lookup: {
+      from: "produtos",
+      localField: "produto_id",
+      foreignField: "_id",
+      as: "produto_info"
+    }
+  },
+  { $unwind: "$produto_info" },
+  {
+    $group: {
+      _id: "$produto_info.nome",
+      valor_medio_venda: { $avg: "$valor_total" }
+    }
+  },
+  {
+    $project: {
+      produto: "$_id",
+      valor_medio_venda: 1
+    }
+  },
+  { $sort: { valor_medio_venda: -1 } } // Ordena pelo valor médio de venda
+]);
+
+
+// 5. Relatório Completo de Vendas (Valor Total, Transações, Quantidade)
+db.transacoes.aggregate([
+  {
+    $lookup: {
+      from: "produtos",
+      localField: "produto_id",
+      foreignField: "_id",
+      as: "produto_info"
+    }
+  },
+  { $unwind: "$produto_info" },
+  {
+    $group: {
+      _id: "$produto_info.nome",
+      total_vendas: { $sum: "$valor_total" },
+      total_transacoes: { $sum: 1 },
+      quantidade_total: { $sum: "$quantidade" }
+    }
+  },
+  {
+    $project: {
+      produto: "$_id",
+      total_vendas: 1,
+      total_transacoes: 1,
+      quantidade_total: 1
+    }
+  },
+  { $sort: { total_vendas: -1 } } 
+]);
