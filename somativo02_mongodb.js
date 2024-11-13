@@ -572,3 +572,213 @@ db.avaliacoes.updateOne(
         }
     }
 );
+
+// 9. Geolocalização
+
+// 9.1 Atualizando usuário para que possa definir sua localização geográfica.
+db.runCommand({
+  collMod: "usuarios",
+  validator: {
+      $jsonSchema: {
+          bsonType: "object",
+          required: ["nome", "email", "senha", "endereco"],
+          properties: {
+              nome: { bsonType: "string", description: "Nome do usuário", minLength: 3, maxLength: 100 },
+              email: { bsonType: "string", description: "Email do usuário", pattern: "^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$" },
+              senha: { bsonType: "string", description: "Senha do usuário", minLength: 8 },
+              endereco: {
+                  bsonType: "object",
+                  required: ["rua", "cidade", "estado", "cep"],
+                  properties: {
+                      rua: { bsonType: "string", description: "Rua do endereço" },
+                      cidade: { bsonType: "string", description: "Cidade do endereço" },
+                      estado: { bsonType: "string", description: "Estado do endereço, formato: XX", enum: estadosBrasil },
+                      cep: { bsonType: "string", description: "CEP do endereço, formato: XXXXXXXX", minLength: 8 }
+                  }
+              },
+              pontos: { bsonType: "int", description: "Pontos de fidelidade do usuário" }, 
+              localizacao: {  // Adicionando o campo 'localizacao' para ponto geográfico
+                bsonType: "object",
+                description: "Localização geográfica do usuário",
+                required: ["type", "coordinates"],
+                properties: {
+                    type: { bsonType: "string", enum: ["Point"], description: "Tipo de geometria, deve ser 'Point'" },
+                    coordinates: { 
+                        bsonType: "array", 
+                        minItems: 2, 
+                        maxItems: 2, 
+                        items: { bsonType: "double" },
+                        description: "Coordenadas geográficas (longitude, latitude)"
+                    }
+                }
+            }
+        }
+      }
+    }
+});
+
+// criação do índice geoespacial do MongoDB para poder realizar busca por proximidade
+db.usuarios.createIndex({ "localizacao": "2dsphere" });
+
+// exemplo de inserção de usuário com localização
+db.usuarios.insertOne({
+  nome: "João Silva",
+  email: "joao.silva@email.com",
+  senha: "senha1234",
+  endereco: {
+      rua: "Rua A",
+      cidade: "São Paulo",
+      estado: "SP",
+      cep: "12345678"
+  },
+  pontos: 150,
+  localizacao: {
+      type: "Point",
+      coordinates: [-46.633309, -23.550520]  // Longitude, Latitude
+  }
+});
+
+// testando a localização do usuário
+db.usuarios.find({
+  localizacao: {
+      $near: {
+          $geometry: { type: "Point", coordinates: [-46.63, -23.55] }, // Coordenadas de exemplo, não precisa ser o número inteiro para localizar
+          $maxDistance: 10000 // Distância máxima em metros
+      }
+  }
+});
+
+// 9.2 Atualizando produto com a localização do vendedor associado a ele
+db.runCommand({
+  collMod: "produtos",
+  validator: {
+    $jsonSchema: {
+      bsonType: "object",
+      required: ["nome", "descricao", "preco", "quantidade_disponivel", "categoria_id", "localizacao"], 
+      properties: {
+        nome: { bsonType: "string", description: "Nome do produto", minLength: 3, maxLength: 150 },
+        descricao: { bsonType: "string", description: "Descrição do produto", minLength: 3, maxLength: 250 },
+        preco: { bsonType: "decimal", description: "Preço do produto", pattern: "^\d+(\.\d{1,2})?$" },
+        quantidade_disponivel: { bsonType: "int", description: "Quantidade disponível em estoque", minimum: 0 },
+        categoria_id: { bsonType: "objectId", description: "ID da categoria do produto" },
+        localizacao: {  
+          bsonType: "object",
+          description: "Localização geográfica do vendedor",
+          required: ["type", "coordinates"],
+          properties: {
+            type: { bsonType: "string", enum: ["Point"], description: "Tipo de geometria, deve ser 'Point'" },
+            coordinates: {
+              bsonType: "array",
+              minItems: 2,
+              maxItems: 2,
+              items: { bsonType: "double" },
+              description: "Coordenadas geográficas (longitude, latitude)"
+            }
+          }
+        }
+      }
+    }
+  }
+});
+
+
+// criacao do indice geoespacial para produtos
+db.produtos.createIndex({ "localizacao": "2dsphere" });
+
+// inserindo um produto com localização
+db.produtos.insertOne({
+  nome: "Smartphone XYZ",
+  descricao: "Smartphone com 6GB de RAM e 128GB de armazenamento",
+  preco:  NumberDecimal("1999.99"),
+  quantidade_disponivel: 50,
+  categoria_id: ObjectId("672d55df5c7964ebca7727ab"),
+  localizacao: {
+    type: "Point",
+    coordinates: [-46.633309, -23.550520] 
+  }
+});
+
+// buscando o produto com localIzação
+db.produtos.find({
+  localizacao: {
+    $near: {
+      $geometry: { type: "Point", coordinates: [-46.633309, -23.550520] },
+      $maxDistance: 10000
+    }
+  }
+});
+
+// Os usuários podem buscar produtos com base na proximidade geográfica, podendo filtrar os resultados por raio de distância.
+
+let usuarioId = ObjectId("ID_DO_USUARIO"); // Substituir com a ID do usuário que vai buscar um produto próximo
+
+// Recuperando as coordenadas do usuário a partir do ID
+let usuario = db.usuarios.findOne({ _id: usuarioId });
+let coordenadasUsuario = usuario.localizacao.coordinates;  // Coordenadas do usuário
+
+// Raio de busca em metros
+let raioBusca = 10000;
+
+// Consulta para encontrar produtos próximos à localização do usuário
+db.produtos.find({
+  localizacao: {
+    $near: {
+      $geometry: { type: "Point", coordinates: coordenadasUsuario },
+      $maxDistance: raioBusca
+    }
+  }
+});
+
+// 9.4 Escreva uma consulta de agregação para encontrar a média de distância entre compradores e vendedores para transações concluídas.
+
+// insetindo 3 usuários com localização geográfica aleatória (dentro de 10 km) para fazer o teste
+db.usuarios.insertMany([
+  {
+    nome: "João Silva",
+    email: "joao.silva@email.com",
+    senha: "senha1234",
+    endereco: {
+      rua: "Rua A",
+      cidade: "São Paulo",
+      estado: "SP",
+      cep: "01000-000"
+    },
+    pontos: 150,
+    localizacao: {
+      type: "Point",
+      coordinates: [-46.625, -23.548]  // Coordenadas aleatórias próximas a São Paulo
+    }
+  },
+  {
+    nome: "Maria Oliveira",
+    email: "maria.oliveira@email.com",
+    senha: "senha1234",
+    endereco: {
+      rua: "Rua B",
+      cidade: "São Paulo",
+      estado: "SP",
+      cep: "01001-000"
+    },
+    pontos: 200,
+    localizacao: {
+      type: "Point",
+      coordinates: [-46.630, -23.555]  // Coordenadas aleatórias próximas a São Paulo
+    }
+  },
+  {
+    nome: "Carlos Pereira",
+    email: "carlos.pereira@email.com",
+    senha: "senha1234",
+    endereco: {
+      rua: "Rua C",
+      cidade: "São Paulo",
+      estado: "SP",
+      cep: "01002-000"
+    },
+    pontos: 100,
+    localizacao: {
+      type: "Point",
+      coordinates: [-46.635, -23.560]  // Coordenadas aleatórias próximas a São Paulo
+    }
+  }
+]);
