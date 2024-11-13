@@ -711,7 +711,8 @@ db.produtos.find({
 
 // 9.3 Os usuários podem buscar produtos com base na proximidade geográfica, podendo filtrar os resultados por raio de distância.
 
-let usuarioId = ObjectId("67340fa0de00bca6b158243e"); // Substituir com a ID do usuário que vai buscar um produto próximo
+//6735234b465715ccd782b897 João Silva
+let usuarioId = ObjectId("6735234b465715ccd782b897"); // Substituir com a ID do usuário que vai buscar um produto próximo
 
 // Recuperando as coordenadas do usuário a partir do ID
 let usuario = db.usuarios.findOne({ _id: usuarioId });
@@ -791,7 +792,7 @@ db.produtos.insertMany([
     descricao: "Produto nunca usado",
     preco:  NumberDecimal("1000.99"),
     quantidade_disponivel: 1,
-    categoria_id: ObjectId("672d55df5c7964ebca7727ae"),
+    categoria_id: ObjectId("672d55df5c7964ebca7727af"),
     localizacao: {
       type: "Point",
       coordinates: [-46.620, -23.545]  // Coordenadas aleatórias próximas a São Paulo
@@ -802,7 +803,7 @@ db.produtos.insertMany([
     descricao: "Produto de qualidade",
     preco:  NumberDecimal("250.00"),
     quantidade_disponivel: 30,
-    categoria_id: ObjectId("672d55df5c7964ebca7727ae"),
+    categoria_id: ObjectId("672d55df5c7964ebca7727af"),
     localizacao: {
       type: "Point",
       coordinates: [-46.625, -23.550]  // Coordenadas aleatórias próximas a São Paulo
@@ -813,7 +814,7 @@ db.produtos.insertMany([
     descricao: "Produto durável",
     preco:  NumberDecimal("1350.00"),
     quantidade_disponivel: 20,
-    categoria_id: ObjectId("672d55df5c7964ebca7727af"),
+    categoria_id: ObjectId("672d55df5c7964ebca7727ae"),
     localizacao: {
       type: "Point",
       coordinates: [-46.615, -23.545]  // Coordenadas aleatórias próximas a São Paulo
@@ -824,28 +825,28 @@ db.produtos.insertMany([
 // inserindo 3 transações concluídas entre os usuários e produtos para testar
 db.transacoes.insertMany([
   {
-    usuario_id: ObjectId("67340fa0de00bca6b158243e"),  // _id do usuário Joaquim Silva
-    produto_id: ObjectId("6734120bde00bca6b1582441"),  // _id do produto Conjunto Sala de Jantar
+    usuario_id: ObjectId("673523a3465715ccd782b899"),  // _id do usuário Joaquim Silva
+    produto_id: ObjectId("673523e9465715ccd782b89c"),  // _id do produto Conjunto Sala de Jantar
     data: new Date(),
-    quantidade: 1,
+    quantidade: 5,
     valor_total: NumberDecimal("1000.99"),
-    pontos_fidelidade: 1001  // Baseado no valor arredondado de 1000.99
+    pontos_fidelidade: 5000  
   },
   {
-    usuario_id: ObjectId("67340fa0de00bca6b158243f"),  // _id do usuário Mariana Oliveira
-    produto_id: ObjectId("6734120bde00bca6b1582442"),  // _id do produto Sofá
+    usuario_id: ObjectId("673523a3465715ccd782b89a"),  // _id do usuário Mariana Oliveira
+    produto_id: ObjectId("673523e9465715ccd782b89d"),  // _id do produto Sofá
     data: new Date(),
-    quantidade: 1,
+    quantidade: 3,
     valor_total: NumberDecimal("250.00"),
-    pontos_fidelidade: 250  // Baseado no valor de 250.00
+    pontos_fidelidade: 750  
   },
   {
-    usuario_id: ObjectId("67340fa0de00bca6b1582440"),  // _id do usuário Carla Pereira
-    produto_id: ObjectId("6734120bde00bca6b1582443"),  // _id do produto Geladeira
+    usuario_id: ObjectId("673523a3465715ccd782b89b"),  // _id do usuário Carla Pereira
+    produto_id: ObjectId("673523e9465715ccd782b89e"),  // _id do produto Geladeira
     data: new Date(),
     quantidade: 1,
     valor_total: NumberDecimal("1350.00"),
-    pontos_fidelidade: 1350  // Baseado no valor de 1350.00
+    pontos_fidelidade: 1350 
   }
 ]);
 
@@ -878,7 +879,7 @@ db.transacoes.aggregate([
   {
     $project: {
       // Extrai as coordenadas geográficas do comprador e do vendedor
-      transacao_id: "$_id",  // Inclui o ID da transação
+      transacao_id: "$_id",
       comprador_coords: "$comprador.localizacao.coordinates",
       vendedor_coords: "$produto.localizacao.coordinates"
     }
@@ -934,3 +935,103 @@ db.transacoes.aggregate([
 
 
 // 9.5 Escreva uma consulta de agregação para encontrar a categoria de produto mais popular em uma área geográfica específica.
+
+//inserir mais produtos para podermos buscar
+db.produtos.insertMany([
+  {
+    nome: 'Mesa de Centro',
+    descricao: 'Mesa de centro de madeira com design moderno',
+    preco: Decimal128('300.00'),
+    quantidade_disponivel: 15,
+    categoria_id: ObjectId('672d55df5c7964ebca7727af'),  
+    localizacao: {
+      type: 'Point',
+      coordinates: [-46.620, -23.547],
+    }
+  },
+  {
+    nome: 'Estante de Livros',
+    descricao: 'Estante de livros com 5 prateleiras',
+    preco: Decimal128('450.00'),
+    quantidade_disponivel: 10,
+    categoria_id: ObjectId('672d55df5c7964ebca7727af'),  
+    localizacao: {
+      type: 'Point',
+      coordinates: [-46.618, -23.548]
+    }
+  }
+]);
+
+//inserir mais transações/compra venda
+db.transacoes.insertMany([
+  {
+    produto_id: ObjectId("67352458465715ccd782b8a2"),  // Mesa de Centro
+    usuario_id: ObjectId("673523a3465715ccd782b899"),  // ID do Joaquim Silva
+    quantidade: 3,
+    valor_total: Decimal128("3000.00"),  
+    data: new Date("2024-11-04"),
+    pontos_fidelidade: 3000
+  },
+  {
+    produto_id: ObjectId("67352458465715ccd782b8a3"),  // Estante de Livros
+    usuario_id: ObjectId("673523a3465715ccd782b89a"),  // ID da Mariana Oliveira
+    quantidade: 5,
+    valor_total: Decimal128("1200.00"),  
+    data: new Date("2024-11-05"),
+    pontos_fidelidade: 1200
+  }
+]);
+
+// Consulta de agregação  para encontrar a categoria de produto mais popular em uma área geográfica específica.
+
+const pontoCentral = [-46.625, -23.545];  
+raioBusca = 5000;  
+
+db.transacoes.aggregate([
+  {
+    $lookup: {
+      from: "produtos",           
+      localField: "produto_id",   
+      foreignField: "_id",       
+      as: "produto"
+    }
+  },
+  {
+    $unwind: "$produto"  // Desenrola o array de produtos para poder acessar os campos
+  },
+  {
+    $match: {
+      "produto.localizacao": {
+        $geoWithin: {
+          $centerSphere: [pontoCentral, raioBusca / 6378100]  // Conversão do raio de metros para radianos
+        }
+      }
+    }
+  },
+  {
+    $lookup: {
+      from: "categorias",            
+      localField: "produto.categoria_id", 
+      foreignField: "_id",           
+      as: "categoria"
+    }
+  },
+  {
+    $unwind: "$categoria"  // Desenrola o array de categorias
+  },
+  {
+    $group: {
+      _id: "$categoria.nome",
+      total_vendas: { $sum: 1 }     // Conta o número de transações por categoria
+    }
+  },
+  {
+    $sort: { total_vendas: -1 }
+  },
+  {
+    $limit: 1
+  }
+]);
+
+
+// 10. Consultas de agregação para gerar relatórios de vendas para os vendedores.
