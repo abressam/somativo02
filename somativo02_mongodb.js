@@ -1035,3 +1035,135 @@ db.transacoes.aggregate([
 
 
 // 10. Consultas de agregação para gerar relatórios de vendas para os vendedores.
+
+// 1. Total de Vendas e Transações por Produto
+
+db.transacoes.aggregate([
+  {
+    $lookup: {
+      from: "produtos",
+      localField: "produto_id",
+      foreignField: "_id",
+      as: "produto_info"
+    }
+  },
+  { $unwind: "$produto_info" },
+  {
+    $group: {
+      _id: "$produto_info.nome",
+      total_vendas: { $sum: "$valor_total" },
+      total_transacoes: { $sum: 1 }
+    }
+  },
+  {
+    $project: {
+      produto: "$_id",
+      total_vendas: 1,
+      total_transacoes: 1
+    }
+  },
+  { $sort: { total_vendas: -1 } } 
+]);
+
+// 2. Total de Vendas por Mês
+
+db.transacoes.aggregate([
+  {
+    $group: {
+      _id: { $month: "$data" },
+      total_vendas: { $sum: "$valor_total" },
+      total_transacoes: { $sum: 1 }
+    }
+  },
+  {
+    $project: {
+      mes: "$_id",
+      total_vendas: 1,
+      total_transacoes: 1
+    }
+  },
+  { $sort: { mes: 1 } } 
+]);
+
+//3. Produtos Mais Vendidos
+db.transacoes.aggregate([
+  {
+    $lookup: {
+      from: "produtos",
+      localField: "produto_id",
+      foreignField: "_id",
+      as: "produto_info"
+    }
+  },
+  { $unwind: "$produto_info" },
+  {
+    $group: {
+      _id: "$produto_info.nome",
+      quantidade_vendida: { $sum: "$quantidade" }
+    }
+  },
+  {
+    $project: {
+      produto: "$_id",
+      quantidade_vendida: 1
+    }
+  },
+  { $sort: { quantidade_vendida: -1 } }
+]);
+
+// 4. Valor Médio de Vendas por Produto
+db.transacoes.aggregate([
+  {
+    $lookup: {
+      from: "produtos",
+      localField: "produto_id",
+      foreignField: "_id",
+      as: "produto_info"
+    }
+  },
+  { $unwind: "$produto_info" },
+  {
+    $group: {
+      _id: "$produto_info.nome",
+      valor_medio_venda: { $avg: "$valor_total" }
+    }
+  },
+  {
+    $project: {
+      produto: "$_id",
+      valor_medio_venda: 1
+    }
+  },
+  { $sort: { valor_medio_venda: -1 } } // Ordena pelo valor médio de venda
+]);
+
+
+// 5. Relatório Completo de Vendas (Valor Total, Transações, Quantidade)
+db.transacoes.aggregate([
+  {
+    $lookup: {
+      from: "produtos",
+      localField: "produto_id",
+      foreignField: "_id",
+      as: "produto_info"
+    }
+  },
+  { $unwind: "$produto_info" },
+  {
+    $group: {
+      _id: "$produto_info.nome",
+      total_vendas: { $sum: "$valor_total" },
+      total_transacoes: { $sum: 1 },
+      quantidade_total: { $sum: "$quantidade" }
+    }
+  },
+  {
+    $project: {
+      produto: "$_id",
+      total_vendas: 1,
+      total_transacoes: 1,
+      quantidade_total: 1
+    }
+  },
+  { $sort: { total_vendas: -1 } } 
+]);
