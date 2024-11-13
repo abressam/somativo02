@@ -576,6 +576,7 @@ db.avaliacoes.updateOne(
 // 9. Geolocalização
 
 // 9.1 Atualizando usuário para que possa definir sua localização geográfica.
+
 db.runCommand({
   collMod: "usuarios",
   validator: {
@@ -708,9 +709,9 @@ db.produtos.find({
   }
 });
 
-// Os usuários podem buscar produtos com base na proximidade geográfica, podendo filtrar os resultados por raio de distância.
+// 9.3 Os usuários podem buscar produtos com base na proximidade geográfica, podendo filtrar os resultados por raio de distância.
 
-let usuarioId = ObjectId("ID_DO_USUARIO"); // Substituir com a ID do usuário que vai buscar um produto próximo
+let usuarioId = ObjectId("67340fa0de00bca6b158243e"); // Substituir com a ID do usuário que vai buscar um produto próximo
 
 // Recuperando as coordenadas do usuário a partir do ID
 let usuario = db.usuarios.findOne({ _id: usuarioId });
@@ -731,11 +732,11 @@ db.produtos.find({
 
 // 9.4 Escreva uma consulta de agregação para encontrar a média de distância entre compradores e vendedores para transações concluídas.
 
-// insetindo 3 usuários com localização geográfica aleatória (dentro de 10 km) para fazer o teste
+// inserindo 3 usuários com localização geográfica aleatória (dentro de 10 km) para fazer o teste
 db.usuarios.insertMany([
   {
-    nome: "João Silva",
-    email: "joao.silva@email.com",
+    nome: "Joaquim Silva",
+    email: "joaquim.silva@email.com",
     senha: "senha1234",
     endereco: {
       rua: "Rua A",
@@ -750,8 +751,8 @@ db.usuarios.insertMany([
     }
   },
   {
-    nome: "Maria Oliveira",
-    email: "maria.oliveira@email.com",
+    nome: "Mariana Oliveira",
+    email: "mariana.oliveira@email.com",
     senha: "senha1234",
     endereco: {
       rua: "Rua B",
@@ -766,8 +767,8 @@ db.usuarios.insertMany([
     }
   },
   {
-    nome: "Carlos Pereira",
-    email: "carlos.pereira@email.com",
+    nome: "Carla Pereira",
+    email: "carla.pereira@email.com",
     senha: "senha1234",
     endereco: {
       rua: "Rua C",
@@ -782,3 +783,154 @@ db.usuarios.insertMany([
     }
   }
 ]);
+
+// inserindo 3 produtos com localização geográfica aleatória (dentro de 10 km) para fazer o teste
+db.produtos.insertMany([
+  {
+    nome: "Conjunto Sala de Jantar",
+    descricao: "Produto nunca usado",
+    preco:  NumberDecimal("1000.99"),
+    quantidade_disponivel: 1,
+    categoria_id: ObjectId("672d55df5c7964ebca7727ae"),
+    localizacao: {
+      type: "Point",
+      coordinates: [-46.620, -23.545]  // Coordenadas aleatórias próximas a São Paulo
+    }
+  },
+  {
+    nome: "Sofá",
+    descricao: "Produto de qualidade",
+    preco:  NumberDecimal("250.00"),
+    quantidade_disponivel: 30,
+    categoria_id: ObjectId("672d55df5c7964ebca7727ae"),
+    localizacao: {
+      type: "Point",
+      coordinates: [-46.625, -23.550]  // Coordenadas aleatórias próximas a São Paulo
+    }
+  },
+  {
+    nome: "Geladeira",
+    descricao: "Produto durável",
+    preco:  NumberDecimal("1350.00"),
+    quantidade_disponivel: 20,
+    categoria_id: ObjectId("672d55df5c7964ebca7727af"),
+    localizacao: {
+      type: "Point",
+      coordinates: [-46.615, -23.545]  // Coordenadas aleatórias próximas a São Paulo
+    }
+  }
+]);
+
+// inserindo 3 transações concluídas entre os usuários e produtos para testar
+db.transacoes.insertMany([
+  {
+    usuario_id: ObjectId("67340fa0de00bca6b158243e"),  // _id do usuário Joaquim Silva
+    produto_id: ObjectId("6734120bde00bca6b1582441"),  // _id do produto Conjunto Sala de Jantar
+    data: new Date(),
+    quantidade: 1,
+    valor_total: NumberDecimal("1000.99"),
+    pontos_fidelidade: 1001  // Baseado no valor arredondado de 1000.99
+  },
+  {
+    usuario_id: ObjectId("67340fa0de00bca6b158243f"),  // _id do usuário Mariana Oliveira
+    produto_id: ObjectId("6734120bde00bca6b1582442"),  // _id do produto Sofá
+    data: new Date(),
+    quantidade: 1,
+    valor_total: NumberDecimal("250.00"),
+    pontos_fidelidade: 250  // Baseado no valor de 250.00
+  },
+  {
+    usuario_id: ObjectId("67340fa0de00bca6b1582440"),  // _id do usuário Carla Pereira
+    produto_id: ObjectId("6734120bde00bca6b1582443"),  // _id do produto Geladeira
+    data: new Date(),
+    quantidade: 1,
+    valor_total: NumberDecimal("1350.00"),
+    pontos_fidelidade: 1350  // Baseado no valor de 1350.00
+  }
+]);
+
+
+// consulta de agregação para encontrar a média de distância das transações feitas (as anteriores com localização implementada)
+
+db.transacoes.aggregate([
+  {
+    $lookup: {
+      from: "usuarios",  // Lookup na coleção de usuários para obter a localização do comprador
+      localField: "usuario_id",
+      foreignField: "_id",
+      as: "comprador"
+    }
+  },
+  {
+    $unwind: "$comprador"  // Desfaz o array de comprador
+  },
+  {
+    $lookup: {
+      from: "produtos",  // Lookup na coleção de produtos para obter a localização do vendedor
+      localField: "produto_id",
+      foreignField: "_id",
+      as: "produto"
+    }
+  },
+  {
+    $unwind: "$produto"  // Desfaz o array de produto
+  },
+  {
+    $project: {
+      // Extrai as coordenadas geográficas do comprador e do vendedor
+      transacao_id: "$_id",  // Inclui o ID da transação
+      comprador_coords: "$comprador.localizacao.coordinates",
+      vendedor_coords: "$produto.localizacao.coordinates"
+    }
+  },
+  {
+    $addFields: {
+      // Calcula a distância entre o comprador e o vendedor usando a fórmula Haversine
+      distancia: {
+        $let: {
+          vars: {
+            lat1: { $arrayElemAt: ["$comprador_coords", 1] },  // Latitude do comprador
+            lon1: { $arrayElemAt: ["$comprador_coords", 0] },  // Longitude do comprador
+            lat2: { $arrayElemAt: ["$vendedor_coords", 1] },  // Latitude do vendedor
+            lon2: { $arrayElemAt: ["$vendedor_coords", 0] }   // Longitude do vendedor
+          },
+          in: {
+            $multiply: [
+              6371,  // Raio da Terra em quilômetros
+              {
+                $acos: {
+                  $add: [
+                    {
+                      $multiply: [
+                        { $sin: { $multiply: [{ $literal: 3.141592653589793 }, { $divide: ["$$lat1", 180] }] } },
+                        { $sin: { $multiply: [{ $literal: 3.141592653589793 }, { $divide: ["$$lat2", 180] }] } }
+                      ]
+                    },
+                    {
+                      $multiply: [
+                        { $cos: { $multiply: [{ $literal: 3.141592653589793 }, { $divide: ["$$lat1", 180] }] } },
+                        { $cos: { $multiply: [{ $literal: 3.141592653589793 }, { $divide: ["$$lat2", 180] }] } },
+                        { $cos: {
+                          $multiply: [{ $literal: 3.141592653589793 }, { $divide: [{ $subtract: ["$$lon2", "$$lon1"] }, 180] }] }
+                        }
+                      ]
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        }
+      }
+    }
+  },
+  {
+    $project: {
+      transacao_id: 1,
+      distancia: 1
+    }
+  }
+]);
+
+
+// 9.5 Escreva uma consulta de agregação para encontrar a categoria de produto mais popular em uma área geográfica específica.
